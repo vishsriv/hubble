@@ -511,9 +511,9 @@ def check_core_dumps(reason=''):
 
 def check_service_status(service_name, state):
     '''
-    Ensure that the given service is not running on the system. Return False if the service is running.
+    Ensure that the given service is in the required state. Return False if it is not in desired state
     Return True otherwise
-    state can be ebaled or disabled.
+    state can be enabled or disabled.
     '''
     output = _execute_shell_command('systemctl is-enabled ' + service_name + ' >/dev/null 2>&1; echo $?')
     if (state == "disabled" and output.strip() == "1") or (state == "enabled" and output.strip() == "0"):
@@ -527,14 +527,14 @@ def check_ssh_timeout_config(reason=''):
     '''
 
     client_alive_interval = _execute_shell_command("grep \"^ClientAliveInterval\" /etc/ssh/sshd_config | awk '{print $NF}'").strip()
-    if client_alive_interval != '' and int(client_alive_interval) < 300:
+    if client_alive_interval != '' and int(client_alive_interval) <= 300:
     	client_alive_count_max = _execute_shell_command("grep \"^ClientAliveCountMax\" /etc/ssh/sshd_config | awk '{print $NF}'").strip()
-    	if client_alive_count_max != '' and int(client_alive_count_max) < 3:
+    	if client_alive_count_max != '' and int(client_alive_count_max) <= 3:
        	    return True
     	else:
-            return "ClientAliveCountMax value should be less than 3"
+            return "ClientAliveCountMax value should be less than equal to 3"
     else:
-    	return "ClientAliveInterval value should be less than 300"
+    	return "ClientAliveInterval value should be less than equal to 300"
 
 
 def check_unowned_files(reason=''):
@@ -573,11 +573,12 @@ def check_ungrouped_files(reason=''):
     return str(list(set(ungrouped_files)))
 
 
-def check_all_users_home_directory(reason=''):
+def check_all_users_home_directory(max_system_uid):
     '''
     Ensure all users' home directories exist
     '''
 
+    max_system_uid = int(max_system_uid)
     users_uids_dirs = _execute_shell_command("cat /etc/passwd | awk -F: '{ print $1 \" \" $3 \" \" $6 }'").strip()
     users_uids_dirs = users_uids_dirs.split('\n') if users_uids_dirs != "" else []
     error = []
@@ -586,7 +587,7 @@ def check_all_users_home_directory(reason=''):
         if len(user_uid_dir) < 3:
                 user_uid_dir = user_uid_dir + ['']*(3-len(user_uid_dir))
         if user_uid_dir[1].isdigit():
-            if int(user_uid_dir[1]) >= 1000 and not os.path.isdir(user_uid_dir[2]) and user_uid_dir[0] is not "nfsnobody":
+            if int(user_uid_dir[1]) >= max_system_uid and not os.path.isdir(user_uid_dir[2]) and user_uid_dir[0] is not "nfsnobody":
                 error += ["The home directory " + user_uid_dir[2] + " of user " + user_uid_dir[0] + " does not exist."]
         else:
             error += ["User " + user_uid_dir[0] + " has invalid uid " + user_uid_dir[1]]
@@ -609,7 +610,7 @@ def check_users_home_directory_permissions(reason=''):
         if len(user_dir) < 2:
                 user_dir = user_dir + ['']*(2-len(user_dir))
         if user_dir[1] is None or user_dir[1] == "":
-            error += ["User " + user_dir[0] + " does not have any home directoyr"]
+            error += ["User " + user_dir[0] + " does not have any home directory"]
         else:
             result = restrict_permissions(user_dir[1], "750")
             if result is not True:
@@ -621,10 +622,12 @@ def check_users_home_directory_permissions(reason=''):
     return str(error)
 
 
-def check_users_own_their_home(reason=''):
+def check_users_own_their_home(max_system_uid):
     '''
     Ensure users own their home directories
     '''
+
+    max_system_uid = int(max_system_uid)
 
     users_uids_dirs = _execute_shell_command("cat /etc/passwd | awk -F: '{ print $1 \" \" $3 \" \" $6 }'").strip()
     users_uids_dirs = users_uids_dirs.split('\n') if users_uids_dirs != "" else []
@@ -634,7 +637,7 @@ def check_users_own_their_home(reason=''):
         if len(user_uid_dir) < 3:
                 user_uid_dir = user_uid_dir + ['']*(3-len(user_uid_dir))
         if user_uid_dir[1].isdigit():
-            if int(user_uid_dir[1]) >= 1000 and os.path.isdir(user_uid_dir[2]) and user_uid_dir[0] is not "nfsnobody":
+            if int(user_uid_dir[1]) >= max_system_uid and os.path.isdir(user_uid_dir[2]) and user_uid_dir[0] is not "nfsnobody":
                 owner = _execute_shell_command("stat -L -c \"%U\" \"" + user_uid_dir[2] + "\"")
                 if owner is not user_uid_dir[0]:
                     error += ["The home directory " + user_uid_dir[2] + " of user " + user_uid_dir[0] + " is owned by " + owner]
@@ -656,11 +659,11 @@ def check_users_dot_files(reason=''):
     users_dirs = users_dirs.split('\n') if users_dirs != "" else []
     error = []
     for user_dir in users_dirs:
-        user_dir = user_dir.split(" ")
+        user_dir = user_dir.split()
         if len(user_dir) < 2:
                 user_dir = user_dir + ['']*(2-len(user_dir))
-        if user_dir[1] is None or user_dir[1] == "":
-            error += ["User " + user_dir[0] + " does not have any home directory"]
+        if user_dir[1] is None or user_dir[1].strip() == "" or not os.path.isdir(user_dir[1]):
+            error += ["User " + user_dir[0] + " does not have valid home directory"]
         else:
             dot_files = _execute_shell_command("find " + user_dir[1] + " -name \".*\"").strip()
             dot_files = dot_files.split('\n') if dot_files != "" else []
@@ -683,20 +686,24 @@ def check_users_forward_files(reason=''):
     Ensure no users have .forward files
     '''
 
-    users_dirs = _execute_shell_command("cat /etc/passwd | awk -F: '{ print $6 }'").strip()
+    users_dirs = _execute_shell_command("cat /etc/passwd | awk -F: '{ print $1\" \"$6 }'").strip()
     users_dirs = users_dirs.split('\n') if users_dirs != "" else []
     error = []
     for user_dir in users_dirs:
-        if user_dir is not None and user_dir is not "" and os.path.isdir(user_dir):
-            forward_file = _execute_shell_command("find " + user_dir + " -name \".forward\"").strip()
+        user_dir = user_dir.split()
+        if len(user_dir) < 2:
+                user_dir = user_dir + ['']*(2-len(user_dir))
+        if user_dir[1] is None or user_dir[1].strip() == "" or not os.path.isdir(user_dir[1]):
+            error += ["User " + user_dir[0] + " does not have valid home directory"]
+        else:
+            forward_file = _execute_shell_command("find " + user_dir[1] + " -name \".forward\"").strip()
             if forward_file is not None and os.path.isfile(forward_file):
-                error += [forward_file]
+                error += ["Home directory: " + user_dir[1] + ", for user: " + user_dir[0] + " has .forward file"]
 
     if error == []:
         return True
 
-    error = list(set(error))
-    return ".forward files exists: " + str(error)
+    return str(error)
 
 
 def check_users_netrc_files(reason=''):
@@ -704,59 +711,68 @@ def check_users_netrc_files(reason=''):
     Ensure no users have .netrc files
     '''
 
-    users_dirs = _execute_shell_command("cat /etc/passwd | awk -F: '{ print $6 }'").strip()
+    users_dirs = _execute_shell_command("cat /etc/passwd | awk -F: '{ print $1\" \"$6 }'").strip()
     users_dirs = users_dirs.split('\n') if users_dirs != "" else []
     error = []
     for user_dir in users_dirs:
-        if user_dir is not None and user_dir is not "" and os.path.isdir(user_dir):
-            netrc_file = _execute_shell_command("find " + user_dir + " -name \".netrc\"").strip()
-            if netrc_file is not None and os.path.isfile(netrc_file):
-                error += [netrc_file]
-
-    if error == []:
-        return True
-
-    error = list(set(error))
-    return ".netrc files exists: " + str(error)
-
-
-def check_users_netrc_files_permissions(reason=''):
-    '''
-    Ensure users' .netrc Files are not group or world accessible
-    '''
-
-    users_dirs = _execute_shell_command("cat /etc/passwd | egrep -v '(root|halt|sync|shutdown)' | awk -F: '($7 != \"/sbin/nologin\") {print $1\" \"$6}'").strip()
-    users_dirs = users_dirs.split('\n') if users_dirs != "" else []
-    error = []
-    for user_dir in users_dirs:
-        user_dir = user_dir.split(" ")
+        user_dir = user_dir.split()
         if len(user_dir) < 2:
                 user_dir = user_dir + ['']*(2-len(user_dir))
-        if user_dir[1] is None or user_dir[1] == "":
-            error += ["User " + user_dir[0] + " does not have any home directory"]
+        if user_dir[1] is None or user_dir[1].strip() == "" or not os.path.isdir(user_dir[1]):
+            error += ["User " + user_dir[0] + " does not have valid home directory"]
         else:
-            netrc_files = _execute_shell_command("find " + user_dir[1] + " -name \".netrc\"").strip()
-            netrc_files = netrc_files.split('\n') if netrc_files != "" else []
-            for netrc_file in netrc_files:
-                if os.path.isfile(netrc_file):
-                    file_permission = _execute_shell_command("ls -ld " + netrc_file + " | cut -f1 -d\" \"").strip()
-                    if file_permission[4] is "r":
-                        error += ["Group Read permission set on file " + netrc_file + " for user " + user_dir[0]]
-                    if file_permission[5] is "w":
-                        error += ["Group Write permission set on file " + netrc_file + " for user " + user_dir[0]]
-                    if file_permission[6] is "e":
-                        error += ["Group Executive permission set on file " + netrc_file + " for user " + user_dir[0]]
-                    if file_permission[7] is "r":
-                        error += ["Other Read permission set on file " + netrc_file + " for user " + user_dir[0]]
-                    if file_permission[8] is "w":
-                        error += ["Other Write permission set on file " + netrc_file + " for user " + user_dir[0]]
-                    if file_permission[9] is "e":
-                        error += ["Other Executive permission set on file " + netrc_file + " for user " + user_dir[0]]
+            netrc_file = _execute_shell_command("find " + user_dir[1] + " -name \".netrc\"").strip()
+            if netrc_file is not None and os.path.isfile(netrc_file):
+                error += ["Home directory: " + user_dir[1] + ", for user: " + user_dir[0] + " has .netrc file"]
 
     if error == []:
         return True
 
     return str(error)
+
+
+def check_groups_validity(reason=''):
+    '''
+    Ensure all groups in /etc/passwd exist in /etc/group
+    '''
+
+    group_ids_in_passwd = _execute_shell_command("cut -s -d: -f4 /etc/passwd 2>/dev/null").strip()
+    group_ids_in_passwd = group_ids_in_passwd.split('\n') if group_ids_in_passwd != "" else []
+    group_ids_in_group = _execute_shell_command("cut -s -d: -f3 /etc/group 2>/dev/null").strip()
+    group_ids_in_group = group_ids_in_group.split('\n') if group_ids_in_group != "" else []
+    invalid_group_ids = list(set(group_ids_in_passwd) - set(group_ids_in_group))
+
+    if invalid_group_ids == []:
+        return True
+
+    return "Groups which are referenced by /etc/passwd but does not exist in /etc/group: " + str(invalid_group_ids)
+
+
+def ensure_reverse_path_filtering():
+    '''
+    Ensure Reverse Path Filtering is enabled
+    '''
+    error_list = []
+    command = "sysctl net.ipv4.conf.all.rp_filter 2> /dev/null"
+    output = _execute_shell_command(command)
+    if output.strip() == '':
+        error_list.append( "net.ipv4.conf.all.rp_filter not found")
+    search_results = re.findall("rp_filter = (\d+)",output)
+    result = int(search_results[0])
+    if( result < 1):
+        error_list.append( "sysctl net.ipv4.conf.all.rp_filter  value set to " + str(result))
+    command = "sysctl net.ipv4.conf.default.rp_filter 2> /dev/null"  
+    output = _execute_shell_command(command)
+    if output.strip() == '':
+        error_list.append( "net.ipv4.conf.default.rp_filter not found")
+    search_results = re.findall("rp_filter = (\d+)",output)
+    result = int(search_results[0])
+    if( result < 1):
+        error_list.append( "sysctl net.ipv4.conf.default.rp_filter  value set to " + str(result))
+    if len(error_list) > 0 :
+        return str(error_list)
+    else:
+        return True
 
 
 FUNCTION_MAP = {
@@ -792,5 +808,6 @@ FUNCTION_MAP = {
     'check_users_dot_files': check_users_dot_files,
     'check_users_forward_files': check_users_forward_files,
     'check_users_netrc_files': check_users_netrc_files,
-    'check_users_netrc_files_permissions': check_users_netrc_files_permissions,
+    'check_groups_validity': check_groups_validity,
+    'ensure_reverse_path_filtering': ensure_reverse_path_filtering,
 }
