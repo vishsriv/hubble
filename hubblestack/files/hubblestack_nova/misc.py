@@ -168,6 +168,13 @@ def _get_tags(data):
 # Begin function definitions
 ############################
 
+def is_valid_home_directory(directory_path):
+    directory_path = None if directory_path is None else directory_path.strip()
+    if directory_path is not None and directory_path != "" and os.path.isdir(directory_path) and directory_path != "/":
+	return True
+
+    return False
+
 def _execute_shell_command(cmd):
     '''
     This function will execute passed command in /bin/shell
@@ -308,7 +315,7 @@ def test_mount_attrs(mount_name,attribute,check_type='hard'):
     else:
         return True
 
-def check_time_synchronization():
+def check_time_synchronization(reason=''):
     '''
     Ensure that some service is running to synchronize the system clock
     '''
@@ -331,6 +338,7 @@ def restrict_permissions(path,permission):
     if (_is_permission_in_limit(max_permission[0],given_permission[0]) and _is_permission_in_limit(max_permission[1],given_permission[1]) and _is_permission_in_limit(max_permission[2],given_permission[2])):
         return True
     return given_permission
+
 
 def _is_permission_in_limit(max_permission,given_permission):
     '''
@@ -375,7 +383,7 @@ def _is_permission_in_limit(max_permission,given_permission):
     return True
         
 
-def check_path_integrity():
+def check_path_integrity(reason=''):
     '''
     Ensure that system PATH variable is not malformed.
     ''' 
@@ -587,8 +595,8 @@ def check_all_users_home_directory(max_system_uid):
         if len(user_uid_dir) < 3:
                 user_uid_dir = user_uid_dir + ['']*(3-len(user_uid_dir))
         if user_uid_dir[1].isdigit():
-            if int(user_uid_dir[1]) >= max_system_uid and not os.path.isdir(user_uid_dir[2]) and user_uid_dir[0] is not "nfsnobody":
-                error += ["The home directory " + user_uid_dir[2] + " of user " + user_uid_dir[0] + " does not exist."]
+            if not is_valid_home_directory(user_uid_dir[2]) and int(user_uid_dir[1]) >= max_system_uid and user_uid_dir[0] is not "nfsnobody":
+                error += ["Either home directory " + user_uid_dir[2] + " of user " + user_uid_dir[0] + " is invalid or does not exist."]
         else:
             error += ["User " + user_uid_dir[0] + " has invalid uid " + user_uid_dir[1]]
     if error == []:
@@ -609,8 +617,8 @@ def check_users_home_directory_permissions(reason=''):
         user_dir = user_dir.split(" ")
         if len(user_dir) < 2:
                 user_dir = user_dir + ['']*(2-len(user_dir))
-        if user_dir[1] is None or user_dir[1] == "":
-            error += ["User " + user_dir[0] + " does not have any home directory"]
+        if not is_valid_home_directory(user_dir[1]):
+            error += ["Either home directory " + user_dir[1] + " of user " + user_dir[0] + " is invalid or does not exist."]
         else:
             result = restrict_permissions(user_dir[1], "750")
             if result is not True:
@@ -637,7 +645,9 @@ def check_users_own_their_home(max_system_uid):
         if len(user_uid_dir) < 3:
                 user_uid_dir = user_uid_dir + ['']*(3-len(user_uid_dir))
         if user_uid_dir[1].isdigit():
-            if int(user_uid_dir[1]) >= max_system_uid and os.path.isdir(user_uid_dir[2]) and user_uid_dir[0] is not "nfsnobody":
+	    if not is_valid_home_directory(user_uid_dir[2]):
+		error += ["Either home directory " + user_uid_dir[2] + " of user " + user_uid_dir[0] + " is invalid or does not exist."]
+            elif int(user_uid_dir[1]) >= max_system_uid and user_uid_dir[0] is not "nfsnobody":
                 owner = _execute_shell_command("stat -L -c \"%U\" \"" + user_uid_dir[2] + "\"")
                 if owner is not user_uid_dir[0]:
                     error += ["The home directory " + user_uid_dir[2] + " of user " + user_uid_dir[0] + " is owned by " + owner]
@@ -662,8 +672,8 @@ def check_users_dot_files(reason=''):
         user_dir = user_dir.split()
         if len(user_dir) < 2:
                 user_dir = user_dir + ['']*(2-len(user_dir))
-        if user_dir[1] is None or user_dir[1].strip() == "" or not os.path.isdir(user_dir[1]):
-            error += ["User " + user_dir[0] + " does not have valid home directory"]
+        if not is_valid_home_directory(user_dir[1]):
+            error += ["Either home directory " + user_dir[1] + " of user " + user_dir[0] + " is invalid or does not exist."]
         else:
             dot_files = _execute_shell_command("find " + user_dir[1] + " -name \".*\"").strip()
             dot_files = dot_files.split('\n') if dot_files != "" else []
@@ -693,12 +703,12 @@ def check_users_forward_files(reason=''):
         user_dir = user_dir.split()
         if len(user_dir) < 2:
                 user_dir = user_dir + ['']*(2-len(user_dir))
-        if user_dir[1] is None or user_dir[1].strip() == "" or not os.path.isdir(user_dir[1]):
-            error += ["User " + user_dir[0] + " does not have valid home directory"]
+        if not is_valid_home_directory(user_dir[1]):
+            error += ["Either home directory " + user_dir[1] + " of user " + user_dir[0] + " is invalid or does not exist."]
         else:
             forward_file = _execute_shell_command("find " + user_dir[1] + " -name \".forward\"").strip()
             if forward_file is not None and os.path.isfile(forward_file):
-                error += ["Home directory: " + user_dir[1] + ", for user: " + user_dir[0] + " has .forward file"]
+                error += ["Home directory: " + user_dir[1] + ", for user: " + user_dir[0] + " has " + forward_file + " file"]
 
     if error == []:
         return True
@@ -718,8 +728,8 @@ def check_users_netrc_files(reason=''):
         user_dir = user_dir.split()
         if len(user_dir) < 2:
                 user_dir = user_dir + ['']*(2-len(user_dir))
-        if user_dir[1] is None or user_dir[1].strip() == "" or not os.path.isdir(user_dir[1]):
-            error += ["User " + user_dir[0] + " does not have valid home directory"]
+        if not is_valid_home_directory(user_dir[1]):
+            error += ["Either home directory " + user_dir[1] + " of user " + user_dir[0] + " is invalid or does not exist."]
         else:
             netrc_file = _execute_shell_command("find " + user_dir[1] + " -name \".netrc\"").strip()
             if netrc_file is not None and os.path.isfile(netrc_file):
@@ -748,31 +758,28 @@ def check_groups_validity(reason=''):
     return "Groups which are referenced by /etc/passwd but does not exist in /etc/group: " + str(invalid_group_ids)
 
 
-def ensure_reverse_path_filtering():
+def ensure_reverse_path_filtering(reason=''):
     '''
     Ensure Reverse Path Filtering is enabled
     '''
     error_list = []
-    command = "sysctl net.ipv4.conf.all.rp_filter 2> /dev/null"
-    output = _execute_shell_command(command)
-    if output.strip() == '':
-        error_list.append( "net.ipv4.conf.all.rp_filter not found")
-    search_results = re.findall("rp_filter = (\d+)",output)
-    result = int(search_results[0])
-    if( result < 1):
-        error_list.append( "sysctl net.ipv4.conf.all.rp_filter  value set to " + str(result))
-    command = "sysctl net.ipv4.conf.default.rp_filter 2> /dev/null"  
-    output = _execute_shell_command(command)
-    if output.strip() == '':
-        error_list.append( "net.ipv4.conf.default.rp_filter not found")
-    search_results = re.findall("rp_filter = (\d+)",output)
-    result = int(search_results[0])
-    if( result < 1):
-        error_list.append( "sysctl net.ipv4.conf.default.rp_filter  value set to " + str(result))
+    _check_sysctl_greater_than_zero("net.ipv4.conf.all.rp_filter", error_list)
+    _check_sysctl_greater_than_zero("net.ipv4.conf.default.rp_filter", error_list)
     if len(error_list) > 0 :
         return str(error_list)
     else:
         return True
+
+
+def _check_sysctl_greater_than_zero(sysctl_argument, error_list):
+    command = "sysctl " + sysctl_argument + " 2> /dev/null"
+    output = _execute_shell_command(command)
+    if output.strip() == '':
+        error_list.append( sysctl_argument + " not found")
+    search_results = re.findall("rp_filter = (\d+)",output)
+    result = int(search_results[0])
+    if( result < 1):
+        error_list.append( sysctl_argument + " value set to " + str(result))
 
 
 FUNCTION_MAP = {
