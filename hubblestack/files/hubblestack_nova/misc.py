@@ -763,23 +763,26 @@ def ensure_reverse_path_filtering(reason=''):
     Ensure Reverse Path Filtering is enabled
     '''
     error_list = []
-    _check_sysctl_greater_than_zero("net.ipv4.conf.all.rp_filter", error_list)
-    _check_sysctl_greater_than_zero("net.ipv4.conf.default.rp_filter", error_list)
+    command = "sysctl net.ipv4.conf.all.rp_filter 2> /dev/null"
+    output = _execute_shell_command(command)
+    if output.strip() == '':
+        error_list.append( "net.ipv4.conf.all.rp_filter not found")
+    search_results = re.findall("rp_filter = (\d+)",output)
+    result = int(search_results[0])
+    if( result < 1):
+        error_list.append( "net.ipv4.conf.all.rp_filter  value set to " + str(result))
+    command = "sysctl net.ipv4.conf.default.rp_filter 2> /dev/null"  
+    output = _execute_shell_command(command)
+    if output.strip() == '':
+        error_list.append( "net.ipv4.conf.default.rp_filter not found")
+    search_results = re.findall("rp_filter = (\d+)",output)
+    result = int(search_results[0])
+    if( result < 1):
+        error_list.append( "net.ipv4.conf.default.rp_filter  value set to " + str(result))
     if len(error_list) > 0 :
         return str(error_list)
     else:
         return True
-
-
-def _check_sysctl_greater_than_zero(sysctl_argument, error_list):
-    command = "sysctl " + sysctl_argument + " 2> /dev/null"
-    output = _execute_shell_command(command)
-    if output.strip() == '':
-        error_list.append( sysctl_argument + " not found")
-    search_results = re.findall("rp_filter = (\d+)",output)
-    result = int(search_results[0])
-    if( result < 1):
-        error_list.append( sysctl_argument + " value set to " + str(result))
 
 
 FUNCTION_MAP = {
