@@ -168,7 +168,7 @@ def _get_tags(data):
 # Begin function definitions
 ############################
 
-def is_valid_home_directory(directory_path):
+def _is_valid_home_directory(directory_path):
     directory_path = None if directory_path is None else directory_path.strip()
     if directory_path is not None and directory_path != "" and os.path.isdir(directory_path) and directory_path != "/":
 	return True
@@ -595,7 +595,7 @@ def check_all_users_home_directory(max_system_uid):
         if len(user_uid_dir) < 3:
                 user_uid_dir = user_uid_dir + ['']*(3-len(user_uid_dir))
         if user_uid_dir[1].isdigit():
-            if not is_valid_home_directory(user_uid_dir[2]) and int(user_uid_dir[1]) >= max_system_uid and user_uid_dir[0] is not "nfsnobody":
+            if not _is_valid_home_directory(user_uid_dir[2]) and int(user_uid_dir[1]) >= max_system_uid and user_uid_dir[0] is not "nfsnobody":
                 error += ["Either home directory " + user_uid_dir[2] + " of user " + user_uid_dir[0] + " is invalid or does not exist."]
         else:
             error += ["User " + user_uid_dir[0] + " has invalid uid " + user_uid_dir[1]]
@@ -617,7 +617,7 @@ def check_users_home_directory_permissions(reason=''):
         user_dir = user_dir.split(" ")
         if len(user_dir) < 2:
                 user_dir = user_dir + ['']*(2-len(user_dir))
-        if not is_valid_home_directory(user_dir[1]):
+        if not _is_valid_home_directory(user_dir[1]):
             error += ["Either home directory " + user_dir[1] + " of user " + user_dir[0] + " is invalid or does not exist."]
         else:
             result = restrict_permissions(user_dir[1], "750")
@@ -645,7 +645,7 @@ def check_users_own_their_home(max_system_uid):
         if len(user_uid_dir) < 3:
                 user_uid_dir = user_uid_dir + ['']*(3-len(user_uid_dir))
         if user_uid_dir[1].isdigit():
-	    if not is_valid_home_directory(user_uid_dir[2]):
+	    if not _is_valid_home_directory(user_uid_dir[2]):
 		error += ["Either home directory " + user_uid_dir[2] + " of user " + user_uid_dir[0] + " is invalid or does not exist."]
             elif int(user_uid_dir[1]) >= max_system_uid and user_uid_dir[0] is not "nfsnobody":
                 owner = _execute_shell_command("stat -L -c \"%U\" \"" + user_uid_dir[2] + "\"")
@@ -672,7 +672,7 @@ def check_users_dot_files(reason=''):
         user_dir = user_dir.split()
         if len(user_dir) < 2:
                 user_dir = user_dir + ['']*(2-len(user_dir))
-        if not is_valid_home_directory(user_dir[1]):
+        if not _is_valid_home_directory(user_dir[1]):
             error += ["Either home directory " + user_dir[1] + " of user " + user_dir[0] + " is invalid or does not exist."]
         else:
             dot_files = _execute_shell_command("find " + user_dir[1] + " -name \".*\"").strip()
@@ -703,7 +703,7 @@ def check_users_forward_files(reason=''):
         user_dir = user_dir.split()
         if len(user_dir) < 2:
                 user_dir = user_dir + ['']*(2-len(user_dir))
-        if not is_valid_home_directory(user_dir[1]):
+        if not _is_valid_home_directory(user_dir[1]):
             error += ["Either home directory " + user_dir[1] + " of user " + user_dir[0] + " is invalid or does not exist."]
         else:
             forward_file = _execute_shell_command("find " + user_dir[1] + " -name \".forward\"").strip()
@@ -728,7 +728,7 @@ def check_users_netrc_files(reason=''):
         user_dir = user_dir.split()
         if len(user_dir) < 2:
                 user_dir = user_dir + ['']*(2-len(user_dir))
-        if not is_valid_home_directory(user_dir[1]):
+        if not _is_valid_home_directory(user_dir[1]):
             error += ["Either home directory " + user_dir[1] + " of user " + user_dir[0] + " is invalid or does not exist."]
         else:
             netrc_file = _execute_shell_command("find " + user_dir[1] + " -name \".netrc\"").strip()
